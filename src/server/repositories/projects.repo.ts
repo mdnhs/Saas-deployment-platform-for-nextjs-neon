@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/server/db/client";
 import { withWorkspace } from "@/server/db/tenant";
 import { projects, type NewProject, type Project } from "@/server/db/schema";
@@ -42,6 +42,16 @@ export async function findProjectById(workspaceId: string, projectId: string) {
       .limit(1);
     return rows[0] ?? null;
   });
+}
+
+export async function countActiveProjects(workspaceId: string): Promise<number> {
+  const [row] = await withWorkspace(workspaceId, (tx) =>
+    tx
+      .select({ n: count() })
+      .from(projects)
+      .where(and(eq(projects.workspaceId, workspaceId), isNull(projects.deletedAt))),
+  );
+  return Number(row?.n ?? 0);
 }
 
 export async function insertProject(input: NewProject): Promise<Project> {

@@ -2,11 +2,13 @@ import "server-only";
 import { z } from "zod";
 import {
   attachVercelProjectId,
+  countActiveProjects,
   findProjectBySlug,
   findProjectById,
   insertProject,
   softDeleteProject,
 } from "@/server/repositories/projects.repo";
+import { assertCountLimit, BillingError } from "@/server/services/billing.service";
 import { vercel, VercelIntegrationError } from "@/server/integrations/vercel";
 import { getRepo, GithubIntegrationError } from "@/server/integrations/github";
 import { logger } from "@/server/security/logger";
@@ -19,7 +21,8 @@ export class ProjectServiceError extends Error {
       | "GITHUB_FORBIDDEN"
       | "VERCEL_FAILED"
       | "VERCEL_CONFLICT"
-      | "NOT_FOUND",
+      | "NOT_FOUND"
+      | "PLAN_LIMIT_EXCEEDED",
     message: string,
   ) {
     super(message);
@@ -75,6 +78,14 @@ export async function connectRepo(input: z.input<typeof connectInput>) {
     if (err instanceof GithubIntegrationError) {
       throw new ProjectServiceError("GITHUB_FORBIDDEN", err.message);
     }
+    throw err;
+  }
+
+  const currentCount = await countActiveProjects(data.workspaceId);
+  try {
+    await assertCountLimit({ workspaceId: data.workspaceId, metric: "projects", currentCount });
+  } catch (err) {
+    if (err instanceof BillingError) throw new ProjectServiceError("PLAN_LIMIT_EXCEEDED", err.message);
     throw err;
   }
 

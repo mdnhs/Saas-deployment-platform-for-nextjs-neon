@@ -5,6 +5,7 @@ import { findProjectBySlug } from "@/server/repositories/projects.repo";
 import { listDeploymentsForProject } from "@/server/repositories/deployments.repo";
 import { listEventsForResource } from "@/server/repositories/resource-events.repo";
 import { listDatabasesForProject } from "@/server/repositories/databases.repo";
+import { listDomainsForProject } from "@/server/repositories/domains.repo";
 import { 
   Card, 
   CardContent, 
@@ -21,10 +22,10 @@ import {
   TabsList, 
   TabsTrigger 
 } from "@/components/ui/tabs";
-import { 
-  IconArrowLeft, 
-  IconGitBranch, 
-  IconHistory, 
+import {
+  IconArrowLeft,
+  IconGitBranch,
+  IconHistory,
   IconBrandGithub,
   IconTerminal2,
   IconAlertTriangle,
@@ -32,12 +33,17 @@ import {
   IconRefresh,
   IconLoader2,
   IconDatabase,
-  IconRocket
+  IconRocket,
+  IconGlobe,
+  IconVariable,
 } from "@tabler/icons-react";
 import { DeployForm } from "./deploy-form";
 import { DeleteProjectForm } from "./delete-form";
 import { RefreshDeploymentButton } from "./refresh-button";
 import { DatabaseSection } from "./database-section";
+import { DomainSection } from "./domain-section";
+import { EnvVarsSection } from "./env-vars-section";
+import { listEnvVars } from "@/server/services/env-vars.service";
 import { cn } from "@/lib/utils";
 import type { DeploymentStatus } from "@/server/db/schema";
 
@@ -80,10 +86,11 @@ export default async function ProjectDetailPage({
       })
     : [];
 
-  const databases = await listDatabasesForProject({
-    workspaceId: ctx.workspaceId,
-    projectId: project.id,
-  });
+  const [databases, domains, envVars] = await Promise.all([
+    listDatabasesForProject({ workspaceId: ctx.workspaceId, projectId: project.id }),
+    listDomainsForProject({ workspaceId: ctx.workspaceId, projectId: project.id }),
+    listEnvVars(ctx.workspaceId, project.id),
+  ]);
   const canManage = ctx.role === "owner" || ctx.role === "admin";
 
   return (
@@ -143,6 +150,14 @@ export default async function ProjectDetailPage({
                   <TabsTrigger value="databases" className="gap-2">
                     <IconDatabase className="size-3.5" />
                     Databases
+                  </TabsTrigger>
+                  <TabsTrigger value="domains" className="gap-2">
+                    <IconGlobe className="size-3.5" />
+                    Domains
+                  </TabsTrigger>
+                  <TabsTrigger value="env-vars" className="gap-2">
+                    <IconVariable className="size-3.5" />
+                    Env Vars
                   </TabsTrigger>
                 </TabsList>
                 <Badge variant="secondary" className="hidden sm:inline-flex">Project Overview</Badge>
@@ -230,6 +245,30 @@ export default async function ProjectDetailPage({
                   canManage={canManage}
                 />
               </TabsContent>
+
+              <TabsContent value="domains" className="mt-0">
+                <DomainSection
+                  workspaceSlug={workspaceSlug}
+                  projectId={project.id}
+                  domains={domains.map((d) => ({
+                    id: d.id,
+                    domain: d.domain,
+                    verifiedAt: d.verifiedAt,
+                    vercelVerification: d.vercelVerification,
+                    createdAt: d.createdAt,
+                  }))}
+                  canManage={canManage}
+                />
+              </TabsContent>
+
+              <TabsContent value="env-vars" className="mt-0">
+                <EnvVarsSection
+                  workspaceSlug={workspaceSlug}
+                  projectSlug={projectSlug}
+                  initialVars={envVars}
+                  canManage={canManage}
+                />
+              </TabsContent>
             </Tabs>
           </div>
 
@@ -241,7 +280,7 @@ export default async function ProjectDetailPage({
                   <h2>Activity Logs</h2>
                 </div>
                 <Card className="bg-zinc-950 text-zinc-400 shadow-xl overflow-hidden border-zinc-800">
-                  <ScrollArea className="h-[400px]">
+                  <ScrollArea className="h-100">
                     <div className="p-4 font-mono text-[11px] leading-relaxed">
                       {events.map((e) => (
                         <div key={e.id} className="mb-3 border-l border-zinc-800 pl-3">

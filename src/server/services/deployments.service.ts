@@ -9,11 +9,16 @@ import { findProjectById } from "@/server/repositories/projects.repo";
 import { transitionDeployment } from "@/server/domain/transition-deployment";
 import { inngest, provisionDeploymentRequested } from "@/inngest/client";
 import { provisionDeploymentNow } from "@/server/services/provision-deployment.service";
+import { assertWithinLimit, recordUsage, BillingError } from "@/server/services/billing.service";
 import { logger } from "@/server/security/logger";
 
 export class DeploymentServiceError extends Error {
   constructor(
-    public readonly code: "INVALID_INPUT" | "PROJECT_NOT_FOUND" | "PROJECT_NOT_CONNECTED",
+    public readonly code:
+      | "INVALID_INPUT"
+      | "PROJECT_NOT_FOUND"
+      | "PROJECT_NOT_CONNECTED"
+      | "PLAN_LIMIT_EXCEEDED",
     message: string,
   ) {
     super(message);
@@ -63,6 +68,13 @@ export async function createDeployment(input: z.input<typeof inputSchema>) {
     );
   }
 
+  try {
+    await assertWithinLimit({ workspaceId: parsed.data.workspaceId, metric: "deploymentsPerMonth" });
+  } catch (err) {
+    if (err instanceof BillingError) throw new DeploymentServiceError("PLAN_LIMIT_EXCEEDED", err.message);
+    throw err;
+  }
+
   const deployment = await insertDeployment({
     workspaceId: parsed.data.workspaceId,
     projectId: parsed.data.projectId,
@@ -83,6 +95,17 @@ export async function createDeployment(input: z.input<typeof inputSchema>) {
     actor: `user:${parsed.data.userId}`,
     payload: { kind: "created", commitSha: parsed.data.commitSha, branch: parsed.data.branch },
   });
+
+  // Record usage before dispatching so the ledger is consistent even if Inngest
+  // delivery fails. Errors here are non-fatal — a missed usage record is a
+  // billing gap, not a product failure.
+  recordUsage({
+    workspaceId: deployment.workspaceId,
+    metric: "deployment",
+    metadata: { projectId: deployment.projectId, deploymentId: deployment.id },
+  }).catch((err: unknown) =>
+    logger.warn({ err, deploymentId: deployment.id }, "deployment.usage_record_failed"),
+  );
 
   const sendResult = await inngest
     .send(

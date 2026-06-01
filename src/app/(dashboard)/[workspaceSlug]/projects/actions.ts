@@ -24,6 +24,12 @@ import {
   provisionDatabase,
   DatabaseServiceError,
 } from "@/server/services/databases.service";
+import {
+  addDomain,
+  removeDomain,
+  refreshDomainVerification,
+  DomainServiceError,
+} from "@/server/services/domains.service";
 
 export type ConnectRepoResult =
   | { ok: true; projectSlug: string }
@@ -43,6 +49,18 @@ export type RefreshResult =
 
 export type ProvisionDatabaseResult =
   | { ok: true; databaseId: string }
+  | { ok: false; error: string };
+
+export type AddDomainResult =
+  | { ok: true; domainId: string; verified: boolean }
+  | { ok: false; error: string };
+
+export type RemoveDomainResult =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type RefreshDomainResult =
+  | { ok: true; verified: boolean }
   | { ok: false; error: string };
 
 async function resolveCtx(workspaceSlug: string) {
@@ -245,6 +263,115 @@ export async function provisionDatabaseAction(
     return { ok: true, databaseId: result.id };
   } catch (err) {
     if (err instanceof DatabaseServiceError) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+const addDomainSchema = z.object({
+  workspaceSlug: z.string().min(1),
+  projectId: z.string().uuid(),
+  domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(3)
+    .max(253)
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/, "enter a valid domain"),
+});
+
+export async function addDomainAction(
+  _prev: AddDomainResult | null,
+  formData: FormData,
+): Promise<AddDomainResult> {
+  const parsed = addDomainSchema.safeParse({
+    workspaceSlug: formData.get("workspaceSlug"),
+    projectId: formData.get("projectId"),
+    domain: formData.get("domain"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "invalid input" };
+  }
+  const ctx = await resolveCtx(parsed.data.workspaceSlug);
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    return { ok: false, error: "only owners and admins can add domains" };
+  }
+
+  try {
+    const row = await addDomain({
+      workspaceId: ctx.workspaceId,
+      projectId: parsed.data.projectId,
+      domain: parsed.data.domain,
+      createdBy: ctx.userId,
+    });
+    revalidatePath(`/${ctx.workspaceSlug}/projects`);
+    return { ok: true, domainId: row.id, verified: !!row.verifiedAt };
+  } catch (err) {
+    if (err instanceof DomainServiceError) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+const domainIdSchema = z.object({
+  workspaceSlug: z.string().min(1),
+  projectId: z.string().uuid(),
+  domainId: z.string().uuid(),
+});
+
+export async function removeDomainAction(
+  _prev: RemoveDomainResult | null,
+  formData: FormData,
+): Promise<RemoveDomainResult> {
+  const parsed = domainIdSchema.safeParse({
+    workspaceSlug: formData.get("workspaceSlug"),
+    projectId: formData.get("projectId"),
+    domainId: formData.get("domainId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "invalid input" };
+  }
+  const ctx = await resolveCtx(parsed.data.workspaceSlug);
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    return { ok: false, error: "only owners and admins can remove domains" };
+  }
+
+  try {
+    await removeDomain({
+      workspaceId: ctx.workspaceId,
+      projectId: parsed.data.projectId,
+      domainId: parsed.data.domainId,
+    });
+    revalidatePath(`/${ctx.workspaceSlug}/projects`);
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof DomainServiceError) return { ok: false, error: err.message };
+    throw err;
+  }
+}
+
+export async function refreshDomainAction(
+  _prev: RefreshDomainResult | null,
+  formData: FormData,
+): Promise<RefreshDomainResult> {
+  const parsed = domainIdSchema.safeParse({
+    workspaceSlug: formData.get("workspaceSlug"),
+    projectId: formData.get("projectId"),
+    domainId: formData.get("domainId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "invalid input" };
+  }
+  const ctx = await resolveCtx(parsed.data.workspaceSlug);
+
+  try {
+    const result = await refreshDomainVerification({
+      workspaceId: ctx.workspaceId,
+      projectId: parsed.data.projectId,
+      domainId: parsed.data.domainId,
+    });
+    revalidatePath(`/${ctx.workspaceSlug}/projects`);
+    return { ok: true, verified: result.verified };
+  } catch (err) {
+    if (err instanceof DomainServiceError) return { ok: false, error: err.message };
     throw err;
   }
 }

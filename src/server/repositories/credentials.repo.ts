@@ -1,5 +1,6 @@
 import "server-only";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, lt } from "drizzle-orm";
+import { db } from "@/server/db/client";
 import { withWorkspace } from "@/server/db/tenant";
 import {
   credentials,
@@ -89,6 +90,26 @@ export async function rotateCredential(input: {
     if (!r) throw new Error("rotateCredential: insert returned no row");
     return r;
   });
+}
+
+/**
+ * Find active credentials sealed under a key version older than `currentVersion`.
+ * Used by the rotation job to re-seal stale rows. Untenanted — runs platform-wide.
+ */
+export async function findStaleCredentials(input: {
+  currentVersion: number;
+  limit?: number;
+}): Promise<Credential[]> {
+  return db
+    .select()
+    .from(credentials)
+    .where(
+      and(
+        isNull(credentials.deletedAt),
+        lt(credentials.keyVersion, input.currentVersion),
+      ),
+    )
+    .limit(input.limit ?? 50);
 }
 
 export async function softDeleteCredential(workspaceId: string, credentialId: string) {

@@ -3,10 +3,12 @@ import { z } from "zod";
 import { findProjectById } from "@/server/repositories/projects.repo";
 import {
   attachNeonIdentifiers,
+  countActiveDatabasesForWorkspace,
   insertDatabase,
   markDatabaseFailed,
   markDatabaseReady,
 } from "@/server/repositories/databases.repo";
+import { assertCountLimit, BillingError } from "@/server/services/billing.service";
 import { neon, NeonIntegrationError } from "@/server/integrations/neon";
 import { storeCredential } from "@/server/services/credentials.service";
 import { logger } from "@/server/security/logger";
@@ -17,7 +19,8 @@ export class DatabaseServiceError extends Error {
       | "INVALID_INPUT"
       | "PROJECT_NOT_FOUND"
       | "NEON_FAILED"
-      | "NO_NEON_CREDENTIAL",
+      | "NO_NEON_CREDENTIAL"
+      | "PLAN_LIMIT_EXCEEDED",
     message: string,
   ) {
     super(message);
@@ -46,6 +49,14 @@ export async function provisionDatabase(input: z.input<typeof inputSchema>) {
   const project = await findProjectById(parsed.data.workspaceId, parsed.data.projectId);
   if (!project) {
     throw new DatabaseServiceError("PROJECT_NOT_FOUND", "project not found");
+  }
+
+  const dbCount = await countActiveDatabasesForWorkspace(parsed.data.workspaceId);
+  try {
+    await assertCountLimit({ workspaceId: parsed.data.workspaceId, metric: "databases", currentCount: dbCount });
+  } catch (err) {
+    if (err instanceof BillingError) throw new DatabaseServiceError("PLAN_LIMIT_EXCEEDED", err.message);
+    throw err;
   }
 
   // Reserve the row first so concurrent attempts surface as a duplicate, and

@@ -1,5 +1,5 @@
 import "server-only";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, count, desc, eq, isNull } from "drizzle-orm";
 import { withWorkspace } from "@/server/db/tenant";
 import {
   databases,
@@ -94,4 +94,14 @@ export async function attachNeonIdentifiers(input: {
         ),
       );
   });
+}
+
+export async function countActiveDatabasesForWorkspace(workspaceId: string): Promise<number> {
+  const [row] = await withWorkspace(workspaceId, (tx) =>
+    tx
+      .select({ n: count() })
+      .from(databases)
+      .where(and(eq(databases.workspaceId, workspaceId), isNull(databases.deletedAt))),
+  );
+  return Number(row?.n ?? 0);
 }

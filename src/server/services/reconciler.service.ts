@@ -144,5 +144,19 @@ export async function reconcileStuckDeployments(): Promise<ReconcileSummary> {
   }
 
   logger.info(summary, "reconciler.sweep_done");
+
+  // Alert when a significant fraction of scanned rows couldn't be resolved.
+  // Wire this log line into your observability platform (Datadog, Grafana, etc.)
+  // via a log-based metric or alert on `reconciler.high_error_rate`.
+  if (summary.scanned > 0 && summary.errors / summary.scanned > 0.2) {
+    logger.error(
+      { ...summary, errorRate: (summary.errors / summary.scanned).toFixed(2) },
+      "reconciler.high_error_rate",
+    );
+  }
+
+  // Surface stuck deployments count as a structured metric for monitoring.
+  logger.info({ stuck: summary.scanned }, "metric.stuck_deployments");
+
   return summary;
 }

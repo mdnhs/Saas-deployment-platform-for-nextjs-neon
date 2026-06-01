@@ -23,10 +23,17 @@
       "Bash(pnpm list *)",
       "Bash(kill 213391)",
       "Bash(pnpm tsx *)",
-      "Bash(kill 268023)"
+      "Bash(kill 268023)",
+      "Bash(pnpm tsc *)",
+      "Bash(mkdir -p /home/tn-99065/Desktop/Experiment/saas-deployment-platform-for-nextjs-neon/src/app/\\\\\\(dashboard\\\\\\)/\\\\[workspaceSlug\\\\]/billing)",
+      "mcp__shadcn__get_add_command_for_items",
+      "Bash(pnpm dlx *)",
+      "Bash(mkdir -p /home/tn-99065/Desktop/Experiment/saas-deployment-platform-for-nextjs-neon/src/app/\\\\\\(dashboard\\\\\\)/\\\\[workspaceSlug\\\\]/onboarding)",
+      "Bash(node -e ' *)"
     ],
     "additionalDirectories": [
-      "/tmp"
+      "/tmp",
+      "/home/tn-99065/Desktop/Experiment/saas-deployment-platform-for-nextjs-neon/src/app/(dashboard)/[workspaceSlug]"
     ]
   }
 }

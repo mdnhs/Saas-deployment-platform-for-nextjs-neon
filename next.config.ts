@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
     "better-auth",
     "@better-auth/kysely-adapter",
     "kysely",
+    "@aws-sdk/client-kms",
+    "stripe",
   ],
 };
 

@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  IconLayoutDashboard, 
-  IconUsers, 
-  IconSettings, 
+import {
+  IconLayoutDashboard,
+  IconUsers,
+  IconSettings,
   IconRocket,
   IconChevronLeft,
   IconCircleFilled,
-  IconCommand
+  IconCommand,
+  IconCreditCard
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { 
@@ -20,8 +21,7 @@ import {
   navigationMenuTriggerStyle 
 } from "@/components/ui/navigation-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { 
+import {
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
@@ -55,6 +55,11 @@ export function Navbar({ workspaceSlug, workspaceName, role, userEmail }: Navbar
       title: "Settings",
       href: `/${workspaceSlug}/settings`,
       icon: IconSettings,
+    },
+    {
+      title: "Billing",
+      href: `/${workspaceSlug}/billing`,
+      icon: IconCreditCard,
     },
   ];
 
@@ -115,7 +120,6 @@ export function Navbar({ workspaceSlug, workspaceName, role, userEmail }: Navbar
         <div className="flex items-center gap-4">
           <div className="hidden flex-col items-end leading-tight lg:flex">
             <span className="text-[11px] font-medium text-foreground">{userEmail}</span>
-            <Badge variant="outline" className="text-[9px] h-4 px-1 text-muted-foreground">Standard Plan</Badge>
           </div>
 
           <DropdownMenu>

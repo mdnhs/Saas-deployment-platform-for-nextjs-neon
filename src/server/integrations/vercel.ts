@@ -215,4 +215,160 @@ export const vercel = {
       throw err;
     }
   },
+
+  /**
+   * Add a custom domain to a Vercel project. Returns the domain record including
+   * any verification records the user must configure in their DNS registrar.
+   * 409 → domain already added (treat as success, re-fetch to get verification).
+   */
+  async addDomain(input: {
+    vercelProjectId: string;
+    domain: string;
+    workspaceId?: string;
+  }): Promise<VercelDomainRecord> {
+    try {
+      return await vercelFetch<VercelDomainRecord>(
+        `/v9/projects/${input.vercelProjectId}/domains`,
+        {
+          method: "POST",
+          ctx: { workspaceId: input.workspaceId },
+          body: JSON.stringify({ name: input.domain }),
+        },
+      );
+    } catch (err) {
+      if (err instanceof VercelIntegrationError && err.code === "CONFLICT") {
+        return vercelFetch<VercelDomainRecord>(
+          `/v9/projects/${input.vercelProjectId}/domains/${encodeURIComponent(input.domain)}`,
+          { ctx: { workspaceId: input.workspaceId } },
+        );
+      }
+      throw err;
+    }
+  },
+
+  /**
+   * Remove a domain from a Vercel project. 404 → already removed; treat as success.
+   */
+  async removeDomain(input: {
+    vercelProjectId: string;
+    domain: string;
+    workspaceId?: string;
+  }): Promise<void> {
+    try {
+      await vercelFetch<unknown>(
+        `/v9/projects/${input.vercelProjectId}/domains/${encodeURIComponent(input.domain)}`,
+        {
+          method: "DELETE",
+          ctx: { workspaceId: input.workspaceId },
+        },
+      );
+    } catch (err) {
+      if (
+        err instanceof VercelIntegrationError &&
+        err.code === "API_ERROR" &&
+        /404/.test(err.message)
+      ) {
+        return;
+      }
+      throw err;
+    }
+  },
+
+  /** Poll current verification status of a domain on a project. */
+  async checkDomain(input: {
+    vercelProjectId: string;
+    domain: string;
+    workspaceId?: string;
+  }): Promise<VercelDomainRecord> {
+    return vercelFetch<VercelDomainRecord>(
+      `/v9/projects/${input.vercelProjectId}/domains/${encodeURIComponent(input.domain)}`,
+      { ctx: { workspaceId: input.workspaceId } },
+    );
+  },
+
+  /**
+   * Create or update an env var on a Vercel project.
+   * - Pass `vercelEnvId` to PATCH an existing var (value/target update).
+   * - Omit it to POST a new var; the returned ID should be persisted.
+   */
+  async upsertEnvVar(input: {
+    vercelProjectId: string;
+    workspaceId?: string;
+    vercelEnvId?: string;
+    key: string;
+    value: string;
+    target: VercelEnvTarget[];
+  }): Promise<VercelEnvVar> {
+    if (input.vercelEnvId) {
+      return vercelFetch<VercelEnvVar>(
+        `/v9/projects/${input.vercelProjectId}/env/${input.vercelEnvId}`,
+        {
+          method: "PATCH",
+          ctx: { workspaceId: input.workspaceId },
+          body: JSON.stringify({ value: input.value, type: "encrypted", target: input.target }),
+        },
+      );
+    }
+    const res = await vercelFetch<VercelCreateEnvResponse>(
+      `/v9/projects/${input.vercelProjectId}/env`,
+      {
+        method: "POST",
+        ctx: { workspaceId: input.workspaceId },
+        body: JSON.stringify([
+          { key: input.key, value: input.value, type: "encrypted", target: input.target },
+        ]),
+      },
+    );
+    const created = res.created[0];
+    if (!created) {
+      const failed = res.failed[0];
+      throw new VercelIntegrationError(
+        "API_ERROR",
+        `vercel env create failed: ${failed?.error?.message ?? "unknown"}`,
+      );
+    }
+    return created;
+  },
+
+  /** Delete an env var from a Vercel project. 404 = already gone, treated as no-op. */
+  async deleteEnvVar(input: {
+    vercelProjectId: string;
+    vercelEnvId: string;
+    workspaceId?: string;
+  }): Promise<void> {
+    try {
+      await vercelFetch<unknown>(
+        `/v9/projects/${input.vercelProjectId}/env/${input.vercelEnvId}`,
+        { method: "DELETE", ctx: { workspaceId: input.workspaceId } },
+      );
+    } catch (err) {
+      if (err instanceof VercelIntegrationError && err.code === "API_ERROR") return;
+      throw err;
+    }
+  },
 };
+
+export interface VercelDomainRecord {
+  name: string;
+  verified: boolean;
+  verification?: Array<{
+    type: string;
+    domain: string;
+    value: string;
+    reason: string;
+  }>;
+}
+
+export type VercelEnvTarget = "production" | "preview" | "development";
+
+export interface VercelEnvVar {
+  id: string;
+  key: string;
+  type: "plain" | "secret" | "encrypted" | "system";
+  target: VercelEnvTarget[];
+}
+
+interface VercelCreateEnvResponse {
+  created: VercelEnvVar[];
+  failed: Array<{ key: string; error: { code: string; message: string } }>;
+}

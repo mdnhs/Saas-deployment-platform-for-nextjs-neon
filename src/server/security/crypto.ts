@@ -1,5 +1,6 @@
 import "server-only";
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
+import { loadKeyFromKms, bustKmsCache } from "./kms";
 
 /**
  * Envelope encryption — ARCHITECTURE §8 / Invariant #6.
@@ -43,7 +44,27 @@ export class CryptoError extends Error {
   }
 }
 
+const USE_KMS = Boolean(process.env.KMS_MASTER_KEY_ARN ?? process.env.KMS_ENCRYPTED_KEY_V1);
+
+/** In-memory key material cache. Populated by `warmKeyCache()` for the KMS path. */
+const keyCache = new Map<number, Buffer>();
+
+/**
+ * Synchronous key loader. Returns from the in-memory cache first.
+ * - Dev/staging: env var `MASTER_KEY_V<n>` (no KMS).
+ * - Production: call `warmKeyCache(version)` once at startup; the KMS-fetched
+ *   key is then served synchronously from cache — `seal`/`open` stay sync.
+ */
 function loadKey(version: number): Buffer {
+  const cached = keyCache.get(version);
+  if (cached) return cached;
+
+  if (USE_KMS) {
+    throw new CryptoError(
+      "NO_KEY",
+      `key V${version} not in cache — call warmKeyCache(${version}) at startup`,
+    );
+  }
   const raw = process.env[`MASTER_KEY_V${version}`];
   if (!raw) {
     throw new CryptoError("NO_KEY", `MASTER_KEY_V${version} not set`);
@@ -55,8 +76,33 @@ function loadKey(version: number): Buffer {
       `MASTER_KEY_V${version} must decode to ${KEY_LEN} bytes (got ${buf.length})`,
     );
   }
+  keyCache.set(version, buf);
   return buf;
 }
+
+/**
+ * Pre-warm the in-memory key cache from KMS (or env var). Call this once
+ * per version at application startup (e.g. Next.js `instrumentation.ts`).
+ * After warming, `seal`/`open` remain synchronous.
+ */
+export async function warmKeyCache(version?: number): Promise<void> {
+  const v = version ?? currentKeyVersion();
+  if (keyCache.has(v)) return;
+  if (USE_KMS) {
+    const key = await loadKeyFromKms(v);
+    keyCache.set(v, key);
+  } else {
+    loadKey(v); // populates the cache from env
+  }
+}
+
+/** Purge the in-memory cache — useful after a key rotation. */
+export function clearKeyCache(): void {
+  keyCache.clear();
+  bustKmsCache();
+}
+
+export { bustKmsCache };
 
 export function currentKeyVersion(): number {
   const raw = process.env.MASTER_KEY_CURRENT_VERSION ?? "1";

@@ -2,23 +2,25 @@ import Link from "next/link";
 import { requireWorkspaceOrRedirect } from "@/server/auth/require-workspace";
 import { listProjects } from "@/server/repositories/projects.repo";
 import { listDeploymentsForProject } from "@/server/repositories/deployments.repo";
-import { 
-  Card, 
-  CardContent, 
-  CardHeader, 
-  CardTitle 
+import { getOnboardingState } from "@/server/services/onboarding.service";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { 
-  IconRocket, 
-  IconPlus, 
-  IconGitBranch, 
-  IconHistory, 
+import {
+  IconRocket,
+  IconPlus,
+  IconGitBranch,
+  IconHistory,
   IconBrandGithub,
   IconArrowRight,
-  IconLayoutGrid
+  IconLayoutGrid,
+  IconSettings,
 } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import type { DeploymentStatus } from "@/server/db/schema";
@@ -42,7 +44,10 @@ export default async function ProjectsPage({
   const { workspaceSlug } = await params;
   const ctx = await requireWorkspaceOrRedirect({ workspaceSlug });
 
-  const projects = await listProjects(ctx.workspaceId);
+  const [projects, onboarding] = await Promise.all([
+    listProjects(ctx.workspaceId),
+    getOnboardingState(ctx.workspaceId, ctx.userId),
+  ]);
   const latestByProject = await Promise.all(
     projects.map(async (p) => {
       const [latest] = await listDeploymentsForProject({
@@ -58,6 +63,21 @@ export default async function ProjectsPage({
   return (
     <div className="min-h-screen bg-linear-to-b from-muted/50 to-background">
       <main className="mx-auto max-w-6xl space-y-10 p-6 md:p-10">
+        {!onboarding.isComplete && (
+          <div className="flex items-center justify-between rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <div className="flex items-center gap-3 text-sm">
+              <IconSettings className="size-4 shrink-0 text-amber-500" />
+              <span className="text-foreground font-medium">Finish setting up your workspace</span>
+              <span className="hidden text-muted-foreground sm:inline">— connect Vercel and Neon to start deploying.</span>
+            </div>
+            <Button asChild size="sm" variant="outline" className="shrink-0 border-amber-500/40 text-amber-700 hover:bg-amber-500/10 dark:text-amber-400">
+              <Link href={`/${workspaceSlug}/onboarding`}>
+                Complete setup
+                <IconArrowRight className="ml-1.5 size-3.5" />
+              </Link>
+            </Button>
+          </div>
+        )}
         <header className="relative overflow-hidden rounded-2xl bg-zinc-900 px-8 py-12 text-white dark:bg-zinc-950">
           <div className="relative z-10 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="space-y-2">

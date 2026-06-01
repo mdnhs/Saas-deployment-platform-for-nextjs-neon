@@ -423,6 +423,177 @@ export const databases = pgTable(
   }),
 );
 
+// -----------------------------------------------------------------------------
+// Billing
+// -----------------------------------------------------------------------------
+
+export const subscriptionPlan = pgEnum("subscription_plan", ["free", "pro", "enterprise"]);
+
+export const subscriptionStatus = pgEnum("subscription_status", [
+  "trialing",
+  "active",
+  "past_due",
+  "canceled",
+  "unpaid",
+]);
+
+/**
+ * One row per workspace. Written only by the Stripe webhook handler — never
+ * optimistically from a Server Action. `provider_customer_id` is the Stripe
+ * customer ID (or SSLCommerz/bKash subscriber ID for BD).
+ */
+export const subscriptions = pgTable(
+  "subscriptions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .unique()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    plan: subscriptionPlan("plan").notNull().default("free"),
+    status: subscriptionStatus("status").notNull().default("active"),
+    providerCustomerId: text("provider_customer_id"),
+    providerSubscriptionId: text("provider_subscription_id"),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => ({
+    workspaceIdx: index("subscriptions_workspace_idx").on(t.workspaceId),
+    customerIdx: index("subscriptions_customer_idx").on(t.providerCustomerId),
+  }),
+);
+
+/**
+ * Append-only usage ledger. Billing is a sum of records over a period, not a
+ * mutable counter — retracting a charge means inserting a negative record.
+ * `metric` is one of: "deployment", "database_hour", "domain".
+ */
+export const usageRecords = pgTable(
+  "usage_records",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    metric: text("metric").notNull(),
+    quantity: integer("quantity").notNull().default(1),
+    recordedAt: timestamp("recorded_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+  },
+  (t) => ({
+    workspaceMetricIdx: index("usage_records_workspace_metric_idx").on(
+      t.workspaceId,
+      t.metric,
+      t.recordedAt,
+    ),
+  }),
+);
+
+// -----------------------------------------------------------------------------
+// Custom Domains
+// -----------------------------------------------------------------------------
+
+/**
+ * A custom domain attached to a project. We add it to Vercel immediately; Vercel
+ * returns verification records (CNAME/TXT) that the user must configure in their
+ * DNS. We poll periodically until `verified_at` is set. Soft-deleted only.
+ */
+export const domains = pgTable(
+  "domains",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    domain: text("domain").notNull(),
+    /** Verification records returned by Vercel (array of {type,domain,value,reason}). */
+    vercelVerification: jsonb("vercel_verification").$type<VercelVerificationRecord[]>(),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => ({
+    activeUnique: uniqueIndex("domains_active_unique")
+      .on(t.workspaceId, t.domain)
+      .where(sql`${t.deletedAt} IS NULL`),
+    projectIdx: index("domains_project_idx").on(t.workspaceId, t.projectId),
+  }),
+);
+
+export interface VercelVerificationRecord {
+  type: string;
+  domain: string;
+  value: string;
+  reason: string;
+}
+
+// -----------------------------------------------------------------------------
+// Project environment variables
+// -----------------------------------------------------------------------------
+
+/**
+ * User-defined env vars per project. Values are sealed (AES-256-GCM) with AAD
+ * = workspaceId:projectId:key so a leaked blob can't be replayed to a different
+ * project. We push vars to Vercel on create/update and track the Vercel env var
+ * ID so we can PATCH or DELETE it later.
+ */
+export const projectEnvVars = pgTable(
+  "project_env_vars",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    ciphertext: bytea("ciphertext").notNull(),
+    iv: bytea("iv").notNull(),
+    authTag: bytea("auth_tag").notNull(),
+    keyVersion: integer("key_version").notNull(),
+    /** Vercel env var ID — needed for PATCH /v9/projects/{id}/env/{envId} */
+    vercelEnvId: text("vercel_env_id"),
+    /** Deployment targets: production | preview | development */
+    target: text("target").array().notNull().default(sql`ARRAY['production']::text[]`),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => ({
+    activeUniqueKey: uniqueIndex("env_vars_active_unique")
+      .on(t.workspaceId, t.projectId, t.key)
+      .where(sql`${t.deletedAt} IS NULL`),
+    projectIdx: index("env_vars_project_idx").on(t.workspaceId, t.projectId),
+  }),
+);
+
+// -----------------------------------------------------------------------------
+// Webhook delivery ledger
+// -----------------------------------------------------------------------------
+
 /**
  * Webhook delivery ledger. Provider + provider-side delivery id (e.g. Vercel's
  * `x-vercel-id`) uniquely identifies a webhook attempt. We insert before
@@ -467,3 +638,11 @@ export type Database = typeof databases.$inferSelect;
 export type NewDatabase = typeof databases.$inferInsert;
 export type CredentialProvider = (typeof credentialProvider.enumValues)[number];
 export type CredentialKind = (typeof credentialKind.enumValues)[number];
+export type Domain = typeof domains.$inferSelect;
+export type NewDomain = typeof domains.$inferInsert;
+export type Subscription = typeof subscriptions.$inferSelect;
+export type UsageRecord = typeof usageRecords.$inferSelect;
+export type SubscriptionPlan = (typeof subscriptionPlan.enumValues)[number];
+export type SubscriptionStatus = (typeof subscriptionStatus.enumValues)[number];
+export type ProjectEnvVar = typeof projectEnvVars.$inferSelect;
+export type NewProjectEnvVar = typeof projectEnvVars.$inferInsert;
