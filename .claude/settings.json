@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm --version)",
+      "Bash(xargs -I{} basename {})",
+      "Bash(mkdir -p src)",
+      "Bash(git mv *)",
+      "Bash(mkdir -p src/server/db src/server/domain src/server/services src/server/repositories src/server/integrations src/server/security src/server/auth src/hono/routes src/hono/middlewares src/inngest/functions src/types)",
+      "Bash(pnpm import *)",
+      "Bash(pnpm install *)",
+      "Bash(pnpm add *)",
+      "Bash(pnpm db:generate)",
+      "Bash(pnpm drizzle-kit *)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm next *)",
+      "Bash(cat /tmp/dev.log)",
+      "Read(//tmp/**)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(pkill -f \"next-server\")",
+      "Bash(pnpm db:migrate)",
+      "Bash(kill 165849)",
+      "Bash(pkill -f \"next dev\\\\|next-server\")",
+      "Bash(pnpm list *)",
+      "Bash(kill 213391)",
+      "Bash(pnpm tsx *)",
+      "Bash(kill 268023)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}
