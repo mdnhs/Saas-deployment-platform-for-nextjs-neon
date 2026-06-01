@@ -12,10 +12,7 @@ const INVITE_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 export class InvitationServiceError extends Error {
   constructor(
-    public readonly code:
-      | "INVALID_INPUT"
-      | "TOKEN_INVALID"
-      | "EMAIL_MISMATCH",
+    public readonly code: "INVALID_INPUT" | "TOKEN_INVALID" | "EMAIL_MISMATCH",
     message: string,
   ) {
     super(message);
@@ -32,7 +29,8 @@ const inviteInputSchema = z.object({
 
 export async function inviteMember(input: z.input<typeof inviteInputSchema>) {
   const parsed = inviteInputSchema.safeParse(input);
-  if (!parsed.success) throw new InvitationServiceError("INVALID_INPUT", parsed.error.message);
+  if (!parsed.success)
+    throw new InvitationServiceError("INVALID_INPUT", parsed.error.message);
 
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + INVITE_TTL_MS);
@@ -56,7 +54,11 @@ export async function consumeInvitation(input: {
   userEmail: string;
 }) {
   const invitation = await findInvitationByToken(input.token);
-  if (!invitation) throw new InvitationServiceError("TOKEN_INVALID", "invite invalid or expired");
+  if (!invitation)
+    throw new InvitationServiceError(
+      "TOKEN_INVALID",
+      "invite invalid or expired",
+    );
   if (invitation.email.toLowerCase() !== input.userEmail.toLowerCase()) {
     throw new InvitationServiceError(
       "EMAIL_MISMATCH",
@@ -72,7 +74,11 @@ export async function consumeInvitation(input: {
   });
 
   logger.info(
-    { invitationId: invitation.id, workspaceId: invitation.workspaceId, userId: input.userId },
+    {
+      invitationId: invitation.id,
+      workspaceId: invitation.workspaceId,
+      userId: input.userId,
+    },
     "invitation.accepted",
   );
   return { workspaceId: invitation.workspaceId };

@@ -12,6 +12,7 @@ export interface WorkspaceContext {
   userEmail: string;
   workspaceId: string;
   workspaceSlug: string;
+  workspaceName: string;
   role: "owner" | "admin" | "member";
 }
 
@@ -59,6 +60,7 @@ export async function requireWorkspace(input: {
     userEmail: session.user.email,
     workspaceId: workspace.id,
     workspaceSlug: workspace.slug,
+    workspaceName: workspace.name,
     role: membership.role,
   };
 }

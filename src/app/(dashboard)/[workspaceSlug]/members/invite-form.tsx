@@ -1,6 +1,22 @@
 "use client";
 import { useActionState } from "react";
 import { inviteMemberAction, type InviteResult } from "./actions";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldError,
+} from "@/components/ui/field";
+import { IconSend, IconLoader2 } from "@tabler/icons-react";
 
 export function InviteMemberForm({ workspaceSlug }: { workspaceSlug: string }) {
   const [state, action, pending] = useActionState<InviteResult | null, FormData>(
@@ -9,39 +25,58 @@ export function InviteMemberForm({ workspaceSlug }: { workspaceSlug: string }) {
   );
 
   return (
-    <form action={action} className="flex flex-col gap-3">
+    <form action={action}>
       <input type="hidden" name="workspaceSlug" value={workspaceSlug} />
-      <label className="flex flex-col gap-1 text-sm">
-        Email
-        <input
-          name="email"
-          type="email"
-          required
-          className="rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Role
-        <select
-          name="role"
-          defaultValue="member"
-          className="rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900"
-        >
-          <option value="member">Member</option>
-          <option value="admin">Admin</option>
-        </select>
-      </label>
-      <button
-        type="submit"
-        disabled={pending}
-        className="self-start rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-black"
-      >
-        {pending ? "Sending…" : "Send invite"}
-      </button>
-      {state?.ok ? (
-        <p className="text-sm text-green-600">Invite created for {state.email}.</p>
-      ) : null}
-      {state && !state.ok ? <p className="text-sm text-red-600">{state.error}</p> : null}
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="email">Email Address</FieldLabel>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            required
+            placeholder="colleague@example.com"
+            className="bg-background"
+          />
+        </Field>
+        
+        <Field>
+          <FieldLabel htmlFor="role">Workspace Role</FieldLabel>
+          <Select name="role" defaultValue="member">
+            <SelectTrigger id="role" className="bg-background">
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="member">Member</SelectItem>
+              <SelectItem value="admin">Admin</SelectItem>
+            </SelectContent>
+          </Select>
+        </Field>
+
+        {state?.ok && (
+          <div className="rounded-lg bg-emerald-500/10 p-3 text-xs font-medium text-emerald-600 border border-emerald-500/20">
+            Invite created for {state.email}.
+          </div>
+        )}
+
+        {state && !state.ok && (
+          <FieldError errors={[{ message: state.error }]} />
+        )}
+
+        <Button type="submit" disabled={pending} className="w-full">
+          {pending ? (
+            <>
+              <IconLoader2 className="animate-spin" data-icon="inline-start" />
+              Sending...
+            </>
+          ) : (
+            <>
+              <IconSend data-icon="inline-start" />
+              Send Invitation
+            </>
+          )}
+        </Button>
+      </FieldGroup>
     </form>
   );
 }
